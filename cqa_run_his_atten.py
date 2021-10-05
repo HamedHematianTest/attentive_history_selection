@@ -303,11 +303,11 @@ tf.summary.scalar('total_loss', total_loss)
 if FLAGS.do_train:
     train_op = optimization.create_optimizer(total_loss, FLAGS.learning_rate, num_train_steps, num_warmup_steps, False)
 
-    print("***** Running training *****")
-    print("  Num orig examples = %d", len(train_examples))
-    print("  Num train_features = %d", len(train_features))
-    print("  Batch size = %d", FLAGS.train_batch_size)
-    print("  Num steps = %d", num_train_steps)
+#     print("***** Running training *****")
+#     print("  Num orig examples = %d", len(train_examples))
+#     print("  Num train_features = %d", len(train_features))
+#     print("  Batch size = %d", FLAGS.train_batch_size)
+#     print("  Num steps = %d", num_train_steps)
     
 merged_summary_op = tf.summary.merge_all()
 
