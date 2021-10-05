@@ -91,35 +91,19 @@ if FLAGS.do_train:
     example_features_nums_fname = FLAGS.cache_dir + FLAGS.dataset.lower() +                                    '/example_features_nums_{}_{}.pkl'.format(FLAGS.load_small_portion, FLAGS.max_considered_history_turns)
         
     try:
-        print('attempting to load train features from cache')
-        with open(features_fname, 'rb') as handle:
-            train_features = pickle.load(handle)
-        with open(example_tracker_fname, 'rb') as handle:
-            example_tracker = pickle.load(handle)
-        with open(variation_tracker_fname, 'rb') as handle:
-            variation_tracker = pickle.load(handle)
-        with open(example_features_nums_fname, 'rb') as handle:
-            example_features_nums = pickle.load(handle)
-    except:
         print('train feature cache does not exist, generating')
-        train_features, example_tracker, variation_tracker, example_features_nums = convert_examples_to_variations_and_then_features(
+        convert_examples_to_variations_and_then_features(
                                                             examples=train_examples, tokenizer=tokenizer, 
                                                             max_seq_length=FLAGS.max_seq_length, doc_stride=FLAGS.doc_stride, 
                                                             max_query_length=FLAGS.max_query_length, 
                                                             max_considered_history_turns=FLAGS.max_considered_history_turns, 
                                                             is_training=True)
-        with open(features_fname, 'wb') as handle:
-            pickle.dump(train_features, handle)
-        with open(example_tracker_fname, 'wb') as handle:
-            pickle.dump(example_tracker, handle)
-        with open(variation_tracker_fname, 'wb') as handle:
-            pickle.dump(variation_tracker, handle)     
-        with open(example_features_nums_fname, 'wb') as handle:
-            pickle.dump(example_features_nums, handle) 
+
         print('train features generated')
-                
-    train_batches = cqa_gen_example_aware_batches_v2(train_features, example_tracker, variation_tracker, example_features_nums, 
-                                                  FLAGS.train_batch_size, FLAGS.num_train_epochs, shuffle=True)
+    except:
+        pass
+    
+
     # temp_train_batches = cqa_gen_example_aware_batches_v2(train_features, example_tracker, variation_tracker, example_features_nums, 
     #                                               24, 1, shuffle=True)
     # print('len temp_train_batches', len(list(temp_train_batches)))
@@ -349,6 +333,10 @@ saver = tf.train.Saver()
 # Initializing the variables
 init = tf.global_variables_initializer()
 tf.get_default_graph().finalize()
+every_step_val = 3000
+epochs = 4
+
+    
 with tf.Session() as sess:
     sess.run(init)
 
@@ -361,168 +349,191 @@ with tf.Session() as sess:
         heq_list = []
         dheq_list = []
         yesno_list, followup_list = [], []
+        global_step = 1
         
         # Training cycle
-        for step, batch in enumerate(train_batches):
-            if step > num_train_steps:
-                # this means the learning rate has been decayed to 0
-                break
-            
-            # time1 = time()
-            batch_features, batch_slice_mask, batch_slice_num, output_features = batch                      
+        for epoch in range(epochs):
+            print('################################## Epoch {} ##################################'.format(epoch))
+            current_file_train = 1
+            num_files_train = 3
+            while current_file_train <= num_files_train:
+                with open('data/train/all_features_{}'.format(current_file_train),'rb') as file_:
+                    train_features = pickle.load(file_)
+                with open('data/train/example_tracker_{}'.format(current_file_train),'rb') as file_:
+                    example_tracker = pickle.load(file_)
+                with open('data/train/variation_tracker_{}'.format(current_file_train),'rb') as file_:
+                    variation_tracker = pickle.load(file_)
+                with open('data/train/example_features_nums_{}'.format(current_file_train),'rb') as file_:
+                    example_features_nums = pickle.load(file_)
 
-            fd = convert_features_to_feed_dict(batch_features) # feed_dict
-            fd_output = convert_features_to_feed_dict(output_features)
-            
-            if FLAGS.better_hae:
-                turn_features = get_turn_features(fd['metadata'])
-                fd['history_answer_marker'] = fix_history_answer_marker_for_bhae(fd['history_answer_marker'], turn_features)
-            
-            if FLAGS.history_ngram != 1:
-                batch_slice_mask, group_batch_features = group_histories(batch_features, fd['history_answer_marker'], 
-                                                                                  batch_slice_mask, batch_slice_num)
-                fd = convert_features_to_feed_dict(group_batch_features)
-            
-            
-            try:
-                _, train_summary, total_loss_res = sess.run([train_op, merged_summary_op, total_loss], 
-                                                feed_dict={unique_ids: fd['unique_ids'], input_ids: fd['input_ids'], 
-                                                input_mask: fd['input_mask'], segment_ids: fd['segment_ids'], 
-                                                start_positions: fd_output['start_positions'], end_positions: fd_output['end_positions'], 
-                                                history_answer_marker: fd['history_answer_marker'], slice_mask: batch_slice_mask, 
-                                                slice_num: batch_slice_num, 
-                                                aux_start_positions: fd['start_positions'], aux_end_positions: fd['end_positions'],
-                                                yesno_labels: fd_output['yesno'], followup_labels: fd_output['followup'], training: True})
-            except Exception as e:
-                print('training, features length: ', len(batch_features))
-                print(e)
-                traceback.print_tb(e.__traceback__)
 
-            train_summary_writer.add_summary(train_summary, step)
-            train_summary_writer.flush()
-            # print('attention weights', attention_weights_res)
-            print('training step: {}, total_loss: {}'.format(step, total_loss_res))
-            # time2 = time()
-            # print('train step', time2-time1)
+                train_batches = cqa_gen_example_aware_batches_v2(train_features, example_tracker, variation_tracker, example_features_nums, 
+                                                  FLAGS.train_batch_size, FLAGS.num_train_epochs, shuffle=True)
             
             
-            # if (step % 3000 == 0 or                 (step >= FLAGS.evaluate_after and step % FLAGS.evaluation_steps == 0)) and                 step != 0:
-            if step >= FLAGS.evaluate_after and step % FLAGS.evaluation_steps == 0:
-                    
-                val_total_loss = []
-                all_results = []
-                all_output_features = []
-                
-                val_batches = cqa_gen_example_aware_batches_v2(val_features, val_example_tracker, val_variation_tracker, 
-                                                  val_example_features_nums, FLAGS.predict_batch_size, 1, shuffle=False)
-                
-                for val_batch in val_batches:
-                    # time3 = time()
-                    batch_results = []
-                    batch_features, batch_slice_mask, batch_slice_num, output_features = val_batch
-                        
+                current_file_train += 1
+                train_features = None
+                example_tracker = None
+                variation_tracker = None
+                example_features_nums = None
+                # Training cycle
+                for step, batch in enumerate(train_batches):
+
+                    # time1 = time()
+                    batch_features, batch_slice_mask, batch_slice_num, output_features = batch                      
+
+                    fd = convert_features_to_feed_dict(batch_features) # feed_dict
+                    fd_output = convert_features_to_feed_dict(output_features)
+
+                    if FLAGS.better_hae:
+                        turn_features = get_turn_features(fd['metadata'])
+                        fd['history_answer_marker'] = fix_history_answer_marker_for_bhae(fd['history_answer_marker'], turn_features)
+
+                    if FLAGS.history_ngram != 1:
+                        batch_slice_mask, group_batch_features = group_histories(batch_features, fd['history_answer_marker'], 
+                                                                                          batch_slice_mask, batch_slice_num)
+                        fd = convert_features_to_feed_dict(group_batch_features)
+
+
                     try:
-                        all_output_features.extend(output_features)
-
-                        fd = convert_features_to_feed_dict(batch_features) # feed_dict
-                        fd_output = convert_features_to_feed_dict(output_features)
-
-                        if FLAGS.better_hae:
-                            turn_features = get_turn_features(fd['metadata'])
-                            fd['history_answer_marker'] = fix_history_answer_marker_for_bhae(fd['history_answer_marker'], turn_features)
-                            
-                        if FLAGS.history_ngram != 1:                     
-                            batch_slice_mask, group_batch_features = group_histories(batch_features, fd['history_answer_marker'], 
-                                                                                  batch_slice_mask, batch_slice_num)
-                            fd = convert_features_to_feed_dict(group_batch_features)
-                        
-                        start_logits_res, end_logits_res,                         yesno_logits_res, followup_logits_res,                         batch_total_loss,                         attention_weights_res = sess.run([start_logits, end_logits, yesno_logits, followup_logits, 
-                                                          total_loss, attention_weights], 
-                                    feed_dict={unique_ids: fd['unique_ids'], input_ids: fd['input_ids'], 
-                                    input_mask: fd['input_mask'], segment_ids: fd['segment_ids'], 
-                                    start_positions: fd_output['start_positions'], end_positions: fd_output['end_positions'], 
-                                    history_answer_marker: fd['history_answer_marker'], slice_mask: batch_slice_mask, 
-                                    slice_num: batch_slice_num,
-                                    aux_start_positions: fd['start_positions'], aux_end_positions: fd['end_positions'],
-                                    yesno_labels: fd_output['yesno'], followup_labels: fd_output['followup'], training: False})
-
-                        val_total_loss.append(batch_total_loss)
-                        
-                        key = (tuple([val_examples[f.example_index].qas_id for f in output_features]), step)
-                        attention_dict[key] = {'batch_slice_mask': batch_slice_mask, 'attention_weights_res': attention_weights_res,
-                                              'batch_slice_num': batch_slice_num, 'len_batch_features': len(batch_features),
-                                              'len_output_features': len(output_features)}
-
-                        for each_unique_id, each_start_logits, each_end_logits, each_yesno_logits, each_followup_logits                                 in zip(fd_output['unique_ids'], start_logits_res, end_logits_res, yesno_logits_res, followup_logits_res):  
-                            each_unique_id = int(each_unique_id)
-                            each_start_logits = [float(x) for x in each_start_logits.flat]
-                            each_end_logits = [float(x) for x in each_end_logits.flat]
-                            each_yesno_logits = [float(x) for x in each_yesno_logits.flat]
-                            each_followup_logits = [float(x) for x in each_followup_logits.flat]
-                            batch_results.append(RawResult(unique_id=each_unique_id, start_logits=each_start_logits, 
-                                                           end_logits=each_end_logits, yesno_logits=each_yesno_logits,
-                                                          followup_logits=each_followup_logits))
-
-                        all_results.extend(batch_results)
+                        _, train_summary, total_loss_res = sess.run([train_op, merged_summary_op, total_loss], 
+                                                        feed_dict={unique_ids: fd['unique_ids'], input_ids: fd['input_ids'], 
+                                                        input_mask: fd['input_mask'], segment_ids: fd['segment_ids'], 
+                                                        start_positions: fd_output['start_positions'], end_positions: fd_output['end_positions'], 
+                                                        history_answer_marker: fd['history_answer_marker'], slice_mask: batch_slice_mask, 
+                                                        slice_num: batch_slice_num, 
+                                                        aux_start_positions: fd['start_positions'], aux_end_positions: fd['end_positions'],
+                                                        yesno_labels: fd_output['yesno'], followup_labels: fd_output['followup'], training: True})
                     except Exception as e:
-                        print('batch dropped because too large!')
-                        print('validating, features length: ', len(batch_features))
+                        print('training, features length: ', len(batch_features))
                         print(e)
                         traceback.print_tb(e.__traceback__)
-                    # time4 = time()
-                    # print('val step', time4-time3)
-                output_prediction_file = os.path.join(FLAGS.output_dir, "predictions_{}.json".format(step))
-                output_nbest_file = os.path.join(FLAGS.output_dir, "nbest_predictions_{}.json".format(step))
-                output_null_log_odds_file = os.path.join(FLAGS.output_dir, "output_null_log_odds_file_{}.json".format(step))
-                
-                # time5 = time()
-                write_predictions(val_examples, all_output_features, all_results,
-                                  FLAGS.n_best_size, FLAGS.max_answer_length,
-                                  FLAGS.do_lower_case, output_prediction_file,
-                                  output_nbest_file, output_null_log_odds_file)
-                # time6 = time()
-                # print('write all val predictions', time6-time5)
-                val_total_loss_value = np.average(val_total_loss)
-                                
-                
-                # call the official evaluation script
-                val_summary = tf.Summary() 
-                # time7 = time()
-                val_eval_res = external_call(val_file_json, output_prediction_file)
-                # time8 = time()
-                # print('external call', time8-time7)
-                val_f1 = val_eval_res['f1']
-                val_followup = val_eval_res['followup']
-                val_yesno = val_eval_res['yes/no']
-                val_heq = val_eval_res['HEQ']
-                val_dheq = val_eval_res['DHEQ']
 
-                heq_list.append(val_heq)
-                dheq_list.append(val_dheq)
-                yesno_list.append(val_yesno)
-                followup_list.append(val_followup)
+                    train_summary_writer.add_summary(train_summary, step)
+                    train_summary_writer.flush()
+                    # print('attention weights', attention_weights_res)
+                    print('training step: {}, total_loss: {}'.format(step, total_loss_res))
+                    # time2 = time()
+                    # print('train step', time2-time1)
 
-                val_summary.value.add(tag="followup", simple_value=val_followup)
-                val_summary.value.add(tag="val_yesno", simple_value=val_yesno)
-                val_summary.value.add(tag="val_heq", simple_value=val_heq)
-                val_summary.value.add(tag="val_dheq", simple_value=val_dheq)
 
-                print('evaluation: {}, total_loss: {}, f1: {}, followup: {}, yesno: {}, heq: {}, dheq: {}\n'.format(
-                    step, val_total_loss_value, val_f1, val_followup, val_yesno, val_heq, val_dheq))
-                with open(FLAGS.output_dir + 'step_result.txt', 'a') as fout:
-                        fout.write('{},{},{},{},{},{},{}\n'.format(step, val_f1, val_heq, val_dheq, 
-                                                                   val_yesno, val_followup, FLAGS.output_dir))
-                
-                val_summary.value.add(tag="total_loss", simple_value=val_total_loss_value)
-                val_summary.value.add(tag="f1", simple_value=val_f1)
-                f1_list.append(val_f1)
-                val_summary_writer.add_summary(val_summary, step)
-                val_summary_writer.flush()
-                
-                save_path = saver.save(sess, '{}/model_{}.ckpt'.format(FLAGS.output_dir, step))
-                print('Model saved in path', save_path)
+                    # if (step % 3000 == 0 or                 (step >= FLAGS.evaluate_after and step % FLAGS.evaluation_steps == 0)) and                 step != 0:
+                    if global_step % every_step_val == 0:
 
-                
+                        val_total_loss = []
+                        all_results = []
+                        all_output_features = []
+
+                        val_batches = cqa_gen_example_aware_batches_v2(val_features, val_example_tracker, val_variation_tracker, 
+                                                          val_example_features_nums, FLAGS.predict_batch_size, 1, shuffle=False)
+
+                        for val_batch in val_batches:
+                            # time3 = time()
+                            batch_results = []
+                            batch_features, batch_slice_mask, batch_slice_num, output_features = val_batch
+
+                            try:
+                                all_output_features.extend(output_features)
+
+                                fd = convert_features_to_feed_dict(batch_features) # feed_dict
+                                fd_output = convert_features_to_feed_dict(output_features)
+
+                                if FLAGS.better_hae:
+                                    turn_features = get_turn_features(fd['metadata'])
+                                    fd['history_answer_marker'] = fix_history_answer_marker_for_bhae(fd['history_answer_marker'], turn_features)
+
+                                if FLAGS.history_ngram != 1:                     
+                                    batch_slice_mask, group_batch_features = group_histories(batch_features, fd['history_answer_marker'], 
+                                                                                          batch_slice_mask, batch_slice_num)
+                                    fd = convert_features_to_feed_dict(group_batch_features)
+
+                                start_logits_res, end_logits_res,                         yesno_logits_res, followup_logits_res,                         batch_total_loss,                         attention_weights_res = sess.run([start_logits, end_logits, yesno_logits, followup_logits, 
+                                                                  total_loss, attention_weights], 
+                                            feed_dict={unique_ids: fd['unique_ids'], input_ids: fd['input_ids'], 
+                                            input_mask: fd['input_mask'], segment_ids: fd['segment_ids'], 
+                                            start_positions: fd_output['start_positions'], end_positions: fd_output['end_positions'], 
+                                            history_answer_marker: fd['history_answer_marker'], slice_mask: batch_slice_mask, 
+                                            slice_num: batch_slice_num,
+                                            aux_start_positions: fd['start_positions'], aux_end_positions: fd['end_positions'],
+                                            yesno_labels: fd_output['yesno'], followup_labels: fd_output['followup'], training: False})
+
+                                val_total_loss.append(batch_total_loss)
+
+                                key = (tuple([val_examples[f.example_index].qas_id for f in output_features]), step)
+                                attention_dict[key] = {'batch_slice_mask': batch_slice_mask, 'attention_weights_res': attention_weights_res,
+                                                      'batch_slice_num': batch_slice_num, 'len_batch_features': len(batch_features),
+                                                      'len_output_features': len(output_features)}
+
+                                for each_unique_id, each_start_logits, each_end_logits, each_yesno_logits, each_followup_logits                                 in zip(fd_output['unique_ids'], start_logits_res, end_logits_res, yesno_logits_res, followup_logits_res):  
+                                    each_unique_id = int(each_unique_id)
+                                    each_start_logits = [float(x) for x in each_start_logits.flat]
+                                    each_end_logits = [float(x) for x in each_end_logits.flat]
+                                    each_yesno_logits = [float(x) for x in each_yesno_logits.flat]
+                                    each_followup_logits = [float(x) for x in each_followup_logits.flat]
+                                    batch_results.append(RawResult(unique_id=each_unique_id, start_logits=each_start_logits, 
+                                                                   end_logits=each_end_logits, yesno_logits=each_yesno_logits,
+                                                                  followup_logits=each_followup_logits))
+
+                                all_results.extend(batch_results)
+                            except Exception as e:
+                                print('batch dropped because too large!')
+                                print('validating, features length: ', len(batch_features))
+                                print(e)
+                                traceback.print_tb(e.__traceback__)
+                            # time4 = time()
+                            # print('val step', time4-time3)
+                        output_prediction_file = os.path.join(FLAGS.output_dir, "predictions_{}.json".format(step))
+                        output_nbest_file = os.path.join(FLAGS.output_dir, "nbest_predictions_{}.json".format(step))
+                        output_null_log_odds_file = os.path.join(FLAGS.output_dir, "output_null_log_odds_file_{}.json".format(step))
+
+                        # time5 = time()
+                        write_predictions(val_examples, all_output_features, all_results,
+                                          FLAGS.n_best_size, FLAGS.max_answer_length,
+                                          FLAGS.do_lower_case, output_prediction_file,
+                                          output_nbest_file, output_null_log_odds_file)
+                        # time6 = time()
+                        # print('write all val predictions', time6-time5)
+                        val_total_loss_value = np.average(val_total_loss)
+
+
+                        # call the official evaluation script
+                        val_summary = tf.Summary() 
+                        # time7 = time()
+                        val_eval_res = external_call(val_file_json, output_prediction_file)
+                        # time8 = time()
+                        # print('external call', time8-time7)
+                        val_f1 = val_eval_res['f1']
+                        val_followup = val_eval_res['followup']
+                        val_yesno = val_eval_res['yes/no']
+                        val_heq = val_eval_res['HEQ']
+                        val_dheq = val_eval_res['DHEQ']
+
+                        heq_list.append(val_heq)
+                        dheq_list.append(val_dheq)
+                        yesno_list.append(val_yesno)
+                        followup_list.append(val_followup)
+
+                        val_summary.value.add(tag="followup", simple_value=val_followup)
+                        val_summary.value.add(tag="val_yesno", simple_value=val_yesno)
+                        val_summary.value.add(tag="val_heq", simple_value=val_heq)
+                        val_summary.value.add(tag="val_dheq", simple_value=val_dheq)
+
+                        print('evaluation: {}, total_loss: {}, f1: {}, followup: {}, yesno: {}, heq: {}, dheq: {}\n'.format(
+                            step, val_total_loss_value, val_f1, val_followup, val_yesno, val_heq, val_dheq))
+                        with open(FLAGS.output_dir + 'step_result.txt', 'a') as fout:
+                                fout.write('{},{},{},{},{},{},{}\n'.format(step, val_f1, val_heq, val_dheq, 
+                                                                           val_yesno, val_followup, FLAGS.output_dir))
+
+                        val_summary.value.add(tag="total_loss", simple_value=val_total_loss_value)
+                        val_summary.value.add(tag="f1", simple_value=val_f1)
+                        f1_list.append(val_f1)
+                        val_summary_writer.add_summary(val_summary, step)
+                        val_summary_writer.flush()
+
+                        save_path = saver.save(sess, '{}/model_{}.ckpt'.format(FLAGS.output_dir, step))
+                        print('Model saved in path', save_path)
+
+                    global_step += 1
 
 
 
