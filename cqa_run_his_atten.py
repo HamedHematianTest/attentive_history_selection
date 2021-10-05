@@ -143,14 +143,6 @@ if FLAGS.do_predict:
                                                         max_query_length=FLAGS.max_query_length, 
                                                         max_considered_history_turns=FLAGS.max_considered_history_turns, 
                                                         is_training=False)
-        with open(features_fname, 'wb') as handle:
-            pickle.dump(val_features, handle)
-        with open(example_tracker_fname, 'wb') as handle:
-            pickle.dump(val_example_tracker, handle)
-        with open(variation_tracker_fname, 'wb') as handle:
-            pickle.dump(val_variation_tracker, handle)  
-        with open(example_features_nums_fname, 'wb') as handle:
-            pickle.dump(val_example_features_nums, handle)
         print('val features generated')
     
      
