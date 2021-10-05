@@ -92,12 +92,6 @@ if FLAGS.do_train:
         
     try:
         print('train feature cache does not exist, generating')
-        convert_examples_to_variations_and_then_features(
-                                                            examples=train_examples, tokenizer=tokenizer, 
-                                                            max_seq_length=FLAGS.max_seq_length, doc_stride=FLAGS.doc_stride, 
-                                                            max_query_length=FLAGS.max_query_length, 
-                                                            max_considered_history_turns=FLAGS.max_considered_history_turns, 
-                                                            is_training=True)
 
         print('train features generated')
     except:
