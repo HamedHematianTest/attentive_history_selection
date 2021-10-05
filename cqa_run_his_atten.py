@@ -514,10 +514,12 @@ with tf.Session() as sess:
 
                         print('evaluation: {}, total_loss: {}, f1: {}, followup: {}, yesno: {}, heq: {}, dheq: {}\n'.format(
                             step, val_total_loss_value, val_f1, val_followup, val_yesno, val_heq, val_dheq))
+                        with open('val_file.txt','w+') as val_file_:
+                            val_file_.write('step {} | f1 {} | heq {} | dheq {}\n'.format(global_step,val_f1,val_heq,val_dheq))
                         with open(FLAGS.output_dir + 'step_result.txt', 'a') as fout:
                                 fout.write('{},{},{},{},{},{},{}\n'.format(step, val_f1, val_heq, val_dheq, 
                                                                            val_yesno, val_followup, FLAGS.output_dir))
-
+                        
                         val_summary.value.add(tag="total_loss", simple_value=val_total_loss_value)
                         val_summary.value.add(tag="f1", simple_value=val_f1)
                         f1_list.append(val_f1)
