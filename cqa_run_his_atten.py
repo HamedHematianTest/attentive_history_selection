@@ -126,25 +126,10 @@ if FLAGS.do_predict:
     example_features_nums_fname = FLAGS.cache_dir + FLAGS.dataset.lower() +                                    '/val_example_features_nums_{}_{}.pkl'.format(FLAGS.load_small_portion, FLAGS.max_considered_history_turns)
         
     try:
-        print('attempting to load val features from cache')
-        with open(features_fname, 'rb') as handle:
-            val_features = pickle.load(handle)
-        with open(example_tracker_fname, 'rb') as handle:
-            val_example_tracker = pickle.load(handle)
-        with open(variation_tracker_fname, 'rb') as handle:
-            val_variation_tracker = pickle.load(handle)
-        with open(example_features_nums_fname, 'rb') as handle:
-            val_example_features_nums = pickle.load(handle)
-    except:
         print('val feature cache does not exist, generating')
-        val_features, val_example_tracker, val_variation_tracker, val_example_features_nums =                                                         convert_examples_to_variations_and_then_features(
-                                                        examples=val_examples, tokenizer=tokenizer, 
-                                                        max_seq_length=FLAGS.max_seq_length, doc_stride=FLAGS.doc_stride, 
-                                                        max_query_length=FLAGS.max_query_length, 
-                                                        max_considered_history_turns=FLAGS.max_considered_history_turns, 
-                                                        is_training=False)
         print('val features generated')
-    
+    except:
+        pass
      
     num_val_examples = len(val_examples)
     
