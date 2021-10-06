@@ -409,10 +409,20 @@ with tf.Session() as sess:
                         val_total_loss = []
                         all_results = []
                         all_output_features = []
-
+                        
+                        
+                        with open('data/val/all_features_1','rb') as file_:
+                            val_features = pickle.load(file_)
+                        with open('data/val/example_tracker_1','rb') as file_:
+                            val_example_tracker = pickle.load(file_)
+                        with open('data/val/variation_tracker_1','rb') as file_:
+                            val_variation_tracker = pickle.load(file_)
+                        with open('data/val/example_features_nums_1','rb') as file_:
+                            val_example_features_nums = pickle.load(file_)
+                            
                         val_batches = cqa_gen_example_aware_batches_v2(val_features, val_example_tracker, val_variation_tracker, 
-                                                          val_example_features_nums, FLAGS.predict_batch_size, 1, shuffle=False)
-
+                                  val_example_features_nums, FLAGS.predict_batch_size, 1, shuffle=False)
+                            
                         for val_batch in val_batches:
                             # time3 = time()
                             batch_results = []
